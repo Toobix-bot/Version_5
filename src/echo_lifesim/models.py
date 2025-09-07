@@ -106,9 +106,18 @@ class PersonaState(BaseModel):
     thought_mute: bool = False
     thought_interval_ms: int = 8000
     last_thought_ts: float = Field(default_factory=lambda: 0.0)
+    thought_max_len: int = 140
+    # overmind adaptive knobs
+    om_suggestion_len: int = 2  # how many action suggestions to surface
+    om_variety: int = 1          # 1=low (habit bias strong), 2=med, 3=high randomness
+    om_intensity: int = 1        # 1=light actions, 2=mixed, 3=push higher effort
     # skills & artifacts
     unlocked_skills: List[str] = Field(default_factory=list)
     artifacts: List[Artifact] = Field(default_factory=list)
+    # feature flags
+    web_research_enabled: bool = False
+    # history management
+    max_episode_history: int = 400
 
     def add_episode(self, ep: Episode) -> None:
         self.episodes.append(ep)
@@ -136,7 +145,7 @@ class PersonaState(BaseModel):
 
     def _tick_effects(self) -> None:
         def dec(d: Dict[str, int]) -> None:
-            remove = []
+            remove: List[str] = []
             for k, v in d.items():
                 nv = v - 1
                 if nv <= 0:
@@ -159,7 +168,9 @@ class PersonaState(BaseModel):
     def maybe_add_thought(self, text: str, refs: Dict[str, List[int] | List[str]] | None = None) -> None:
         if self.thought_mute:
             return
-        self.thoughts.append(Thought(text=text, refs=refs or {}))
+        # enforce max len
+        truncated = text[: self.thought_max_len]
+        self.thoughts.append(Thought(text=truncated, refs=refs or {}))
 
     # skills
     def unlock_skill(self, name: str) -> bool:
@@ -175,6 +186,20 @@ class PersonaState(BaseModel):
     def add_artifact(self, title: str, effect: str = "flavor", notes: str = "") -> Artifact:
         art = Artifact(epoch=self.epoch, title=title, effect=effect, notes=notes)
         self.artifacts.append(art)
+        return art
+
+    # epoch & compression
+    def advance_epoch(self) -> Artifact:
+        """Advance epoch: create summary artifact & compress old episodes."""
+        self.epoch += 1
+        # build summary
+        top_prefs = ",".join(self.top_preferences(3)) or "-"
+        top_habits = ",".join(self.top_habits(3)) or "-"
+        summary = f"E{self.epoch}: prefs={top_prefs} habits={top_habits} episodes={len(self.episodes)}"
+        art = self.add_artifact(title=f"Epoch {self.epoch} Summary", effect="summary", notes=summary)
+        # compress episodes if exceeding cap (keep newest N)
+        if len(self.episodes) > self.max_episode_history:
+            self.episodes = self.episodes[-self.max_episode_history:]
         return art
 
 # rebuild to resolve forward refs

@@ -70,9 +70,15 @@ class GroqClient:
                 data = r.json()
                 return data.get("choices", [{}])[0].get("message", {}).get("content", "")[:max_tokens]
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 401:
+                code = e.response.status_code
+                if code == 401:
                     return "[LLM] Auth fehlgeschlagen (401). Prüfe GROQ_API_KEY."
-                last_err = f"HTTP {e.response.status_code}: {e.response.text[:100]}"
+                if code == 429:
+                    last_err = "Rate Limit (429) – warte kurz oder reduziere Frequenz."
+                elif 500 <= code < 600:
+                    last_err = f"Serverfehler {code} – transient?"
+                else:
+                    last_err = f"HTTP {code}: {e.response.text[:80]}"
             except httpx.TimeoutException:
                 last_err = "Timeout"
             except Exception as e:  # pragma: no cover
@@ -81,6 +87,11 @@ class GroqClient:
             if attempt <= MAX_RETRIES:
                 continue
         return f"[LLM] Fehlgeschlagen nach {MAX_RETRIES+1} Versuchen: {last_err}"[:200]
+
+    # Placeholder for future Responses API integration (stream/tool usage)
+    def respond(self, system: str, user: str) -> str:  # pragma: no cover
+        """Fallback to chat for now. Later: implement streaming & tool calls."""
+        return self.chat(system, user)
 
     def ping(self) -> str:
         """Kurzer Test ob Key funktioniert."""

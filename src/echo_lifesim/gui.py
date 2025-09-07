@@ -51,6 +51,15 @@ with st.sidebar:
         engine = LifeSimEngine()
         st.session_state.engine = engine
         st.warning("Zurückgesetzt.")
+    st.markdown("### Epoch / Research")
+    if st.button("Epoch +1"):
+        art = engine.state.advance_epoch()
+        st.success(f"Epoch {engine.state.epoch} -> Artifact: {art.title}")
+    if st.button("Toggle Web Research"):
+        engine.state.web_research_enabled = not engine.state.web_research_enabled
+    st.caption(f"WebResearch: {'AN' if engine.state.web_research_enabled else 'AUS'}")
+    if engine.state.artifacts:
+        st.caption(f"Artifacts: {len(engine.state.artifacts)} (letzte: {engine.state.artifacts[-1].title})")
 
 col_input, col_actions, col_state = st.columns([2,1,2])
 
@@ -89,6 +98,19 @@ with col_actions:
             st.write(f"• {label} ({duration})")
         if last.get("event_effects"):
             st.caption(f"Event Effekte: {last['event_effects']}")
+        if engine.state.web_research_enabled and engine.state.has_skill("web_research_3_2_1"):
+            with st.expander("Web Research 3-2-1"):
+                q = st.text_input("Query", key="research_q")
+                if st.button("Research starten"):
+                    if q.strip():
+                        snippets = [
+                            {"src": "synth_1", "text": f"Fakt A zu {q}"},
+                            {"src": "synth_2", "text": f"Fakt B zu {q}"},
+                            {"src": "synth_3", "text": f"Fakt C zu {q}"},
+                        ]
+                        st.write(snippets)
+                    else:
+                        st.warning("Query eingeben.")
     else:
         st.caption("Noch keine Interaktion.")
 

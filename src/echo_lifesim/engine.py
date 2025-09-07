@@ -51,8 +51,10 @@ class LifeSimEngine:
         return effects
 
     def suggest_actions(self) -> List[Tuple[str, str]]:
+        s = self.state
         candidates: List[Tuple[str, str]] = []
-        n = self.state.needs
+        n = s.needs
+        # base candidate generation
         if n.energy < 45:
             candidates.append(("2-Min atemfokus", "2-Min"))
         if n.order < 45:
@@ -66,15 +68,47 @@ class LifeSimEngine:
                 ("kurzer stretch", "2-Min"),
                 ("mini lernnotiz", "5-Min"),
                 ("ordner sortieren", "10-Min"),
+                ("tiefer fokus block", "15-Min"),
             ]
-        random.shuffle(candidates)
-        base = candidates[:2]
-        for h in self.state.top_habits(3):
+        # intensity filter / reorder
+        if s.om_intensity == 1:
+            candidates = [c for c in candidates if not c[1].startswith("15")]
+        elif s.om_intensity == 3:
+            # ensure at least one higher effort at front
             for c in candidates:
-                if h.startswith(c[0][:5]) and c not in base:
-                    base.append(c)
+                if c[1].startswith("15"):
+                    candidates.remove(c)
+                    candidates.insert(0, c)
                     break
-        return base[:2]
+        # variety handling
+        random.shuffle(candidates)
+        if s.om_variety == 1:
+            # reinforce habits: push most frequent habit-like candidate up
+            for h in s.top_habits(3):
+                for c in candidates:
+                    if h.startswith(c[0][:5]):
+                        candidates.remove(c)
+                        candidates.insert(0, c)
+                        break
+                break
+        elif s.om_variety == 3:
+            # inject random novel suggestion rarely
+            novel_pool = [
+                ("5-Min journal stichpunkte", "5-Min"),
+                ("kurzer dankbarkeits-check", "2-Min"),
+            ]
+            if random.random() < 0.5:
+                candidates.insert(0, random.choice(novel_pool))
+        # finalize length
+        limit = max(1, min(4, s.om_suggestion_len))
+        trimmed = candidates[:limit]
+        # skill-based injection: web research
+        if s.web_research_enabled and s.has_skill("web_research_3_2_1"):
+            # put a lightweight research action if not already there
+            label = "3-2-1 web research mini"
+            if all(label not in c[0] for c in trimmed):
+                trimmed.append((label, "5-Min"))
+        return trimmed
 
     def persona_reply(self, user_text: str, event_key: Optional[str] = None) -> PersonaReply:
         self.state.turn += 1
@@ -97,6 +131,9 @@ class LifeSimEngine:
                 reply = enriched[:320]
         self.state.add_episode(Episode(actor="persona", text=reply))
         adjustments = self.overmind_step()
+        # log adjustments as system episode for transparency
+        if adjustments:
+            self.state.add_episode(Episode(actor="system", text=f"overmind {adjustments}", tags=["overmind"]))
         return {
             "reply": reply,
             "actions": actions,
@@ -125,6 +162,9 @@ class LifeSimEngine:
         self.state.accepted_actions += 1
         self.state.success_streak += 1
         self.state.record_habit(choice_label)
+        # artifact auto awarding every 25 xp
+        if self.state.xp % 25 == 0:
+            self.state.add_artifact(title=f"Milestone XP {self.state.xp}", effect="milestone", notes="Auto-award")
         cl = choice_label.lower()
         if "atem" in cl:
             self.state.needs.apply_delta(calm=+5, clarity=+3)
@@ -163,15 +203,44 @@ class LifeSimEngine:
         recent = [ep for ep in reversed(s.episodes) if ep.actor == "user"][:2]
         if recent:
             summary_bits = [ep.text[:40] for ep in recent]
-            thought = f"Fokus: {' | '.join(summary_bits)}"[:120]
+            raw_thought = f"Fokus: {' | '.join(summary_bits)}"
+            thought = raw_thought[: self.state.thought_max_len]
             s.maybe_add_thought(thought)
             s.last_thought_ts = now
 
     def overmind_step(self) -> Dict[str, int | str]:
         s = self.state
+        adjustments: Dict[str, int | str] = {}
+        # clarity drives ticker speed
         if s.needs.clarity < 40:
             s.thought_interval_ms = max(4000, s.thought_interval_ms - 500)
         else:
             if s.thought_interval_ms < 8000:
                 s.thought_interval_ms += 250
-        return {"thought_interval_ms": s.thought_interval_ms}
+        adjustments["thought_interval_ms"] = s.thought_interval_ms
+        # energy influences intensity
+        if s.needs.energy < 40:
+            s.om_intensity = 1
+        elif s.needs.energy > 65 and s.needs.clarity > 55:
+            s.om_intensity = 3
+        else:
+            s.om_intensity = 2
+        adjustments["om_intensity"] = s.om_intensity
+        # connection influences variety
+        if s.needs.connection < 40:
+            s.om_variety = 1
+        elif s.needs.connection > 60:
+            s.om_variety = 3
+        else:
+            s.om_variety = 2
+        adjustments["om_variety"] = s.om_variety
+        # success streak modulates suggestion length (1-4)
+        streak = s.success_streak
+        if streak <= 1:
+            s.om_suggestion_len = 2
+        elif streak <= 3:
+            s.om_suggestion_len = 3
+        else:
+            s.om_suggestion_len = 4
+        adjustments["om_suggestion_len"] = s.om_suggestion_len
+        return adjustments

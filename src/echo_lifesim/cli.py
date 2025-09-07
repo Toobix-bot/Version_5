@@ -80,6 +80,42 @@ def thought_interval(ms: int) -> None:
     console.print({"thought_interval_ms": engine.state.thought_interval_ms})
 
 @app.command()
+def overmind() -> None:
+    """Zeigt aktuelle Overmind-Anpassungen / Interval."""
+    console.print({
+        "thought_interval_ms": engine.state.thought_interval_ms,
+        "streak": engine.state.success_streak,
+        "accepted": engine.state.accepted_actions,
+        "rejected": engine.state.rejected_actions,
+        "om_intensity": engine.state.om_intensity,
+        "om_variety": engine.state.om_variety,
+        "om_suggestion_len": engine.state.om_suggestion_len,
+    })
+
+@app.command()
+def overmind_set(
+    intensity: int | None = typer.Option(None, help="1-3"),
+    variety: int | None = typer.Option(None, help="1-3"),
+    suggestion_len: int | None = typer.Option(None, help="1-4"),
+) -> None:
+    if intensity is not None:
+        engine.state.om_intensity = max(1, min(3, intensity))
+    if variety is not None:
+        engine.state.om_variety = max(1, min(3, variety))
+    if suggestion_len is not None:
+        engine.state.om_suggestion_len = max(1, min(4, suggestion_len))
+    console.print({
+        "om_intensity": engine.state.om_intensity,
+        "om_variety": engine.state.om_variety,
+        "om_suggestion_len": engine.state.om_suggestion_len,
+    })
+
+@app.command()
+def thought_max_len(value: int) -> None:
+    engine.state.thought_max_len = max(40, min(400, value))
+    console.print({"thought_max_len": engine.state.thought_max_len})
+
+@app.command()
 def skills_scan() -> None:
     cards = load_skill_cards()
     result = autounlock_from_tests(engine.state, cards)
@@ -92,6 +128,34 @@ def skills_list() -> None:
         "available": list(cards.keys()),
         "unlocked": engine.state.unlocked_skills,
     })
+
+@app.command()
+def epoch() -> None:
+    art = engine.state.advance_epoch()
+    console.print({"epoch": engine.state.epoch, "artifact": art.title})
+
+@app.command()
+def artifacts() -> None:
+    data = [a.model_dump() for a in engine.state.artifacts[-10:]]
+    console.print(data or "(keine artifacts)")
+
+@app.command()
+def web_research_toggle() -> None:
+    engine.state.web_research_enabled = not engine.state.web_research_enabled
+    console.print({"web_research_enabled": engine.state.web_research_enabled})
+
+@app.command()
+def research(query: str) -> None:
+    if not engine.state.web_research_enabled:
+        console.print("[red]Web Research ist deaktiviert.[/red]")
+        raise typer.Exit(1)
+    # Placeholder simulated 3-2-1 output
+    snippets = [
+        {"src": "synth_1", "text": f"Zusammenfassung zu {query} (1)"},
+        {"src": "synth_2", "text": f"Weitere Perspektive {query} (2)"},
+        {"src": "synth_3", "text": f"Detailaspekt {query} (3)"},
+    ]
+    console.print({"query": query, "snippets": snippets})
 
 @app.command()
 def save(path: str = typer.Option(str(DEFAULT_STATE_PATH), help="Datei für State")) -> None:

@@ -1,0 +1,13 @@
+{
+  "name": "web_research_3_2_1",
+  "purpose": "Structured 3-2-1 micro web research (3 facts, 2 comparisons, 1 next-step). Placeholder internal simulation.",
+  "io_in": "query",
+  "io_out": "summary",
+  "limits": {"cooldown": 10},
+  "examples": ["recherche kiwi nährwerte", "recherche python 3.13 features"],
+  "tests": [
+    {"input": "recherche kiwi nährwerte", "expect_sub": "kiwi"},
+    {"input": "recherche python 3.13 features", "expect_sub": "python"}
+  ],
+  "enabled": true
+}
