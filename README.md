@@ -2,6 +2,8 @@
 
 Minimaler Prototyp basierend auf deinem Konzept (Mirror-Mode, Episoden, Bedürfnisse, A/B Aktionen, Reflexion alle 5 Züge).
 
+> NEU: Siehe `README_TUTORIAL.md` für einen geführten Einstieg (Erste Schritte, Beispiele, GUI, Tipps).
+
 ## Installation
 
 Voraussetzung: Python 3.11+

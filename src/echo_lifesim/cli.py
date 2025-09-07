@@ -13,6 +13,26 @@ app = typer.Typer(help="ECHO-LifeSim CLI")
 console = Console()
 engine = LifeSimEngine()
 
+ONBOARD_HINTS = [
+    "Beschreibe kurz deinen aktuellen inneren Zustand (z.B. 'etwas unruhig, will mich fokussieren').",
+    "Nutze danach 'echo-sim act " + '"<Aktion>"' + "' um eine vorgeschlagene Mikro-Aktion auszuführen.",
+    "Sieh dir mit 'echo-sim state' den Rohzustand an (Needs pendeln Richtung 50).",
+    "Mit 'echo-sim epoch' forcierst du einen Epochenwechsel (Artefakt + evtl. Life-Phase).",
+    "Verwende 'echo-sim scenario-set default' um ein Scenario zu setzen (Need-Drift).",
+    "Nutze 'echo-sim chronicle-export chronicle.md' für eine Markdown-Lebenschronik.",
+]
+
+def maybe_onboarding() -> None:
+    if engine.state.episodes:
+        return
+    console.rule("Willkommen bei ECHO-LifeSim (Erststart)")
+    console.print("Kurzer Leitfaden – du hast noch keine Episoden.")
+    for i,h in enumerate(ONBOARD_HINTS, start=1):
+        console.print(f"[bold]{i}.[/bold] {h}")
+    console.print("Starte jetzt z.B.:\n  echo-sim turn 'Bin etwas müde aber will einen klaren nächsten Schritt'\n")
+
+maybe_onboarding()
+
 @app.command()
 def turn(text: str, event: str = typer.Option(None, help="Optional event key")) -> None:
     """Submit a user input line and get persona reply + suggestions."""
@@ -255,6 +275,13 @@ def set_model(name: str) -> None:
         console.print(f"[green]Modell gesetzt: {name}[/green]")
     else:
         console.print(f"[red]Unbekanntes Modell: {name}[/red]")
+
+@app.command()
+def help_start() -> None:
+    """Zeigt kompakten Einstiegsleitfaden + erste Befehle."""
+    for i,h in enumerate(ONBOARD_HINTS, start=1):
+        console.print(f"[bold]{i}.\t[/bold]{h}")
+    console.print("Beispiel: echo-sim turn 'Fühle mich zerstreut und will fokussieren' --event regen")
 
 if __name__ == "__main__":
     app()
