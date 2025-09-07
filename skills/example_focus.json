@@ -1,0 +1,13 @@
+{
+  "name": "focus_micro_break",
+  "purpose": "Suggests micro-break focusing patterns",
+  "io_in": "text",
+  "io_out": "text",
+  "limits": {"cooldown": 5},
+  "examples": ["atem fokus jetzt", "2 minuten fokus"],
+  "tests": [
+    {"input": "atem fokus jetzt", "expect_sub": "fokus"},
+    {"input": "2 minuten fokus phase", "expect_sub": "fokus"}
+  ],
+  "enabled": true
+}

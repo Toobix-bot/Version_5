@@ -21,4 +21,13 @@ def export_state(path: Path) -> None:
     if not src.exists():
         return
     path.write_bytes(src.read_bytes())
+    # also write a companion thoughts file if thoughts exist
+    try:
+        data = orjson.loads(src.read_bytes())
+        thoughts = data.get("thoughts")
+        if thoughts:
+            tp = Path(str(path) + ".thoughts.json")
+            tp.write_bytes(orjson.dumps(thoughts, option=orjson.OPT_INDENT_2))
+    except Exception:
+        pass
 

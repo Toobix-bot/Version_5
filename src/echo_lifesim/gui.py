@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import time
+import sys
 import streamlit as st
 from pathlib import Path
 
@@ -9,6 +10,10 @@ try:  # pragma: no cover
     from .engine import LifeSimEngine  # type: ignore
     from .persistence import load_state, save_state, DEFAULT_STATE_PATH  # type: ignore
 except ImportError:  # executed when not run as package
+    # add src folder to sys.path
+    src_path = Path(__file__).resolve().parents[1]  # .../src
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
     from echo_lifesim.engine import LifeSimEngine  # type: ignore
     from echo_lifesim.persistence import load_state, save_state, DEFAULT_STATE_PATH  # type: ignore
 
@@ -92,6 +97,8 @@ with col_state:
     needs = engine.state.needs.model_dump()
     for k,v in needs.items():
         st.progress(int(v), text=f"{k}: {int(v)}")
+    st.markdown("### Overmind")
+    st.write({"thought_interval_ms": engine.state.thought_interval_ms, "streak": engine.state.success_streak})
     st.markdown("### Buffs")
     if engine.state.buffs:
         st.write(", ".join(f"{b}({ttl})" for b, ttl in engine.state.buffs.items()))
@@ -106,6 +113,9 @@ with col_state:
     recent = engine.state.episodes[-5:]
     for ep in recent:
         st.write(f"[{ep.actor}] {ep.text}")
+    st.markdown("### Thoughts")
+    for th in engine.state.thoughts[-5:]:
+        st.caption(f"🧠 {th.text}")
 
 st.markdown("---")
 st.caption("Preview GUI • Streamlit • Speichert automatisch nur bei Klick auf 'State speichern'")

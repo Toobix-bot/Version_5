@@ -6,6 +6,7 @@ from .engine import LifeSimEngine
 from pathlib import Path
 from .llm_client import get_groq
 from .persistence import save_state, load_state, export_state, DEFAULT_STATE_PATH
+from .skills import load_skill_cards, autounlock_from_tests
 
 app = typer.Typer(help="ECHO-LifeSim CLI")
 console = Console()
@@ -38,7 +39,59 @@ def act(label: str = typer.Argument(..., help="Exact label of chosen action")) -
 @app.command()
 def state() -> None:
     """Dump raw PersonaState as JSON-like dict."""
-    console.print(engine.state.model_dump())
+    data = engine.state.model_dump()
+    # attach lightweight overmind preview
+    data['overmind_preview'] = {'thought_interval_ms': engine.state.thought_interval_ms}
+    data['thought_count'] = len(engine.state.thoughts)
+    console.print(data)
+
+@app.command()
+def thoughts(limit: int = typer.Option(10, help="Anzahl letzter Thoughts")) -> None:
+    items = engine.state.thoughts[-limit:]
+    if not items:
+        console.print("[dim]Keine Thoughts bisher.[/dim]")
+        return
+    table = Table(title=f"Letzte {len(items)} Thoughts")
+    table.add_column("Zeit")
+    table.add_column("Text")
+    for t in items:
+        table.add_row(f"{int(t.ts)%86400}", t.text)
+    console.print(table)
+
+@app.command()
+def reject() -> None:
+    """Lehne aktuelle Vorschläge ab (Zähler erhöht, Streak reset)."""
+    engine.reject_action()
+    console.print("[yellow]Vorschläge abgelehnt.[/yellow]")
+
+@app.command()
+def thought_mute() -> None:
+    engine.state.thought_mute = True
+    console.print("[cyan]Thought-Ticker stumm geschaltet.[/cyan]")
+
+@app.command()
+def thought_unmute() -> None:
+    engine.state.thought_mute = False
+    console.print("[green]Thought-Ticker aktiv.[/green]")
+
+@app.command()
+def thought_interval(ms: int) -> None:
+    engine.state.thought_interval_ms = max(1000, min(60000, ms))
+    console.print({"thought_interval_ms": engine.state.thought_interval_ms})
+
+@app.command()
+def skills_scan() -> None:
+    cards = load_skill_cards()
+    result = autounlock_from_tests(engine.state, cards)
+    console.print(result)
+
+@app.command()
+def skills_list() -> None:
+    cards = load_skill_cards()
+    console.print({
+        "available": list(cards.keys()),
+        "unlocked": engine.state.unlocked_skills,
+    })
 
 @app.command()
 def save(path: str = typer.Option(str(DEFAULT_STATE_PATH), help="Datei für State")) -> None:

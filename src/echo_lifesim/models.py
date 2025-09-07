@@ -15,6 +15,32 @@ class Episode(BaseModel):
     tags: List[str] = Field(default_factory=list)
     importance: float = 0.5
 
+class Thought(BaseModel):
+    ts: float = Field(default_factory=lambda: time.time())
+    text: str
+    source: str = "ticker"  # future: overmind, system, reflection
+    refs: Dict[str, List[int] | List[str]] = Field(default_factory=dict)
+
+class SkillTest(BaseModel):
+    input: str
+    expect_sub: str
+
+class SkillCard(BaseModel):
+    name: str
+    purpose: str = ""
+    io_in: str = "text"
+    io_out: str = "text"
+    limits: Dict[str, int] = Field(default_factory=dict)
+    examples: List[str] = Field(default_factory=list)
+    tests: List[SkillTest] = Field(default_factory=list)
+    enabled: bool = True
+
+class Artifact(BaseModel):
+    epoch: int
+    title: str
+    effect: str = "flavor"
+    notes: str = ""
+
 class NeedState(BaseModel):
     energy: int = 50
     clarity: int = 50
@@ -69,6 +95,20 @@ class PersonaState(BaseModel):
     buffs: Dict[str, int] = Field(default_factory=dict)  # name -> remaining turns
     debuffs: Dict[str, int] = Field(default_factory=dict)
     habit_counts: Dict[str, int] = Field(default_factory=dict)  # action_key -> uses
+    # counters & meta
+    accepted_actions: int = 0
+    rejected_actions: int = 0
+    success_streak: int = 0
+    epoch: int = 0
+    # thought ticker
+    thoughts: List[Thought] = Field(default_factory=list)
+    thought_active: bool = True
+    thought_mute: bool = False
+    thought_interval_ms: int = 8000
+    last_thought_ts: float = Field(default_factory=lambda: 0.0)
+    # skills & artifacts
+    unlocked_skills: List[str] = Field(default_factory=list)
+    artifacts: List[Artifact] = Field(default_factory=list)
 
     def add_episode(self, ep: Episode) -> None:
         self.episodes.append(ep)
@@ -114,3 +154,28 @@ class PersonaState(BaseModel):
 
     def top_habits(self, n: int = 5) -> List[str]:
         return [k for k, _ in sorted(self.habit_counts.items(), key=lambda kv: kv[1], reverse=True)[:n]]
+
+    # thought handling
+    def maybe_add_thought(self, text: str, refs: Dict[str, List[int] | List[str]] | None = None) -> None:
+        if self.thought_mute:
+            return
+        self.thoughts.append(Thought(text=text, refs=refs or {}))
+
+    # skills
+    def unlock_skill(self, name: str) -> bool:
+        if name in self.unlocked_skills:
+            return False
+        self.unlocked_skills.append(name)
+        return True
+
+    def has_skill(self, name: str) -> bool:
+        return name in self.unlocked_skills
+
+    # artifacts
+    def add_artifact(self, title: str, effect: str = "flavor", notes: str = "") -> Artifact:
+        art = Artifact(epoch=self.epoch, title=title, effect=effect, notes=notes)
+        self.artifacts.append(art)
+        return art
+
+# rebuild to resolve forward refs
+PersonaState.model_rebuild()
