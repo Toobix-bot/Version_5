@@ -7,6 +7,7 @@ from pathlib import Path
 from .llm_client import get_groq
 from .persistence import save_state, load_state, export_state, DEFAULT_STATE_PATH
 from .skills import load_skill_cards, autounlock_from_tests
+from .world_assets import load_scenario, load_items_pack
 
 app = typer.Typer(help="ECHO-LifeSim CLI")
 console = Console()
@@ -156,6 +157,57 @@ def research(query: str) -> None:
         {"src": "synth_3", "text": f"Detailaspekt {query} (3)"},
     ]
     console.print({"query": query, "snippets": snippets})
+
+@app.command()
+def chronicle_export(path: str = "chronicle.md") -> None:
+    text = engine.build_chronicle()
+    from pathlib import Path
+    Path(path).write_text(text, encoding="utf-8")
+    console.print({"chronicle_export": path, "bytes": len(text)})
+
+@app.command()
+def auto_tick(steps: int = typer.Option(1, help="Anzahl autonomer Ticks")) -> None:
+    out = []
+    for _ in range(steps):
+        out.append(engine.autonomous_tick())
+    console.print(out)
+
+@app.command()
+def items() -> None:
+    console.print([i.model_dump() for i in engine.state.items])
+
+@app.command()
+def add_item(name: str) -> None:
+    from echo_lifesim.models import Item
+    engine.state.items.append(Item(name=name))
+    console.print({"added_item": name})
+
+@app.command()
+def mastery() -> None:
+    console.print({"uses": engine.state.skill_uses, "levels": engine.state.skill_mastery})
+
+@app.command()
+def life_phase() -> None:
+    console.print({"current": engine.state.life_phase, "history": engine.state.life_phase_history})
+
+@app.command()
+def scenario_set(name: str) -> None:
+    scen = load_scenario(name)
+    engine.state.world.scenario = scen.get("name", name)
+    console.print({"scenario": engine.state.world.scenario})
+
+@app.command()
+def items_load(pack: str = "starter_pack.json") -> None:
+    from echo_lifesim.models import Item
+    data = load_items_pack(pack)
+    added = []
+    for it in data:
+        try:
+            engine.state.items.append(Item(**it))
+            added.append(it.get("name"))
+        except Exception:
+            continue
+    console.print({"loaded": added})
 
 @app.command()
 def save(path: str = typer.Option(str(DEFAULT_STATE_PATH), help="Datei für State")) -> None:

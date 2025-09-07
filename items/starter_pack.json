@@ -1,0 +1,4 @@
+[
+  {"name":"focus_token","effect_buffs":{"klarer_kopf":2},"passive_need_delta":{"clarity":1},"notes":"kleiner Klarheits-Boost"},
+  {"name":"order_charm","effect_buffs":{"ordnung_plus":2},"passive_need_delta":{"order":1},"notes":"Ordnung hält länger"}
+]

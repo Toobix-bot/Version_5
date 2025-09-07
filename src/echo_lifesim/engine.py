@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Tuple, List, Dict, TypedDict, Optional
+from typing import Tuple, List, Dict, TypedDict, Optional, Any
 import random
 import time
 from .models import PersonaState, Episode
@@ -34,7 +34,15 @@ class LifeSimEngine:
         self._last_tick_check = time.time()
 
     def ingest_user_input(self, text: str) -> None:
-        self.state.add_episode(Episode(actor="user", text=text, tags=[]))
+        topic = "main"
+        lowered = text.lower()
+        if any(k in lowered for k in ["arbeit","job","projekt"]):
+            topic = "work"
+        elif any(k in lowered for k in ["freund","sozial","famil"]):
+            topic = "social"
+        elif any(k in lowered for k in ["gesund","körper","sport"]):
+            topic = "health"
+        self.state.add_episode(Episode(actor="user", text=text, tags=[], topic_id=topic))
         for token in ["morgens", "abends", "ruhig", "fokus"]:
             if token in text.lower():
                 self.state.upsert_preference(token)
@@ -49,6 +57,33 @@ class LifeSimEngine:
         if effects:
             self.state.needs.apply_delta(**effects)
         return effects
+
+    def maybe_trigger_biased_event(self) -> Optional[Dict[str, Any]]:
+        """Trigger an event influenced by scenario event_bias if any.
+        Picks from events where name appears in scenario bias list with weighted random.
+        """
+        scen_name = self.state.world.scenario
+        from .world_assets import load_scenario
+        try:
+            scen = load_scenario(f"{scen_name}.json")
+        except Exception:
+            return None
+        bias = scen.get("event_bias", {})
+        if not bias:
+            return None
+        # Build weighted list
+        weighted: List[str] = []
+        # Build from bias keys directly (assumed valid event keys)
+        for ev_name, weight in bias.items():
+            weighted.extend([ev_name] * max(1, int(weight)))
+        if not weighted:
+            return None
+        import random
+        if random.random() < 0.25:  # 25% chance per tick
+            chosen = random.choice(weighted)
+            eff = self.apply_event(chosen)
+            return {"applied": chosen, "effects": eff}
+        return None
 
     def suggest_actions(self) -> List[Tuple[str, str]]:
         s = self.state
@@ -131,11 +166,14 @@ class LifeSimEngine:
             enriched = groq.chat(system, f"User: {user_text}\nKontext: {reply}")
             if enriched:
                 reply = enriched[:320]
-        self.state.add_episode(Episode(actor="persona", text=reply))
+        # persona reply inherits last user topic (if any)
+        last_user = next((ep for ep in reversed(self.state.episodes) if ep.actor == "user"), None)
+        topic = last_user.topic_id if last_user else "main"
+        self.state.add_episode(Episode(actor="persona", text=reply, topic_id=topic))
         adjustments = self.overmind_step()
         # log adjustments as system episode for transparency
         if adjustments:
-            self.state.add_episode(Episode(actor="system", text=f"overmind {adjustments}", tags=["overmind"]))
+            self.state.add_episode(Episode(actor="system", text=f"overmind {adjustments}", tags=["overmind"], topic_id=topic))
         return {
             "reply": reply,
             "actions": actions,
@@ -164,6 +202,16 @@ class LifeSimEngine:
         self.state.accepted_actions += 1
         self.state.success_streak += 1
         self.state.record_habit(choice_label)
+        # skill mastery tracking (simple mapping by label prefixes)
+        if "web research" in choice_label.lower():
+            key = "web_research_3_2_1"
+            self.state.skill_uses[key] = self.state.skill_uses.get(key, 0) + 1
+            uses = self.state.skill_uses[key]
+            # mastery levels every 5 uses up to 5
+            new_level = min(5, uses // 5)
+            if new_level > self.state.skill_mastery.get(key, 0):
+                self.state.skill_mastery[key] = new_level
+                self.state.add_episode(Episode(actor="system", text=f"skill_mastery_up {key} {new_level}", tags=["skill"], topic_id="main"))
         # artifact auto awarding every 25 xp
         if self.state.xp % 25 == 0:
             self.state.add_artifact(title=f"Milestone XP {self.state.xp}", effect="milestone", notes="Auto-award")
@@ -184,22 +232,27 @@ class LifeSimEngine:
         self.state.advance_time()
         self._apply_status_effects()
         if applied:
-            self.state.add_episode(Episode(actor="system", text=f"action_effect {choice_label} {applied}", tags=["action_effect"]))
+            self.state.add_episode(Episode(actor="system", text=f"action_effect {choice_label} {applied}", tags=["action_effect"], topic_id="main"))
 
     # life chronicle (basic)
     def build_chronicle(self) -> str:
         s = self.state
         lines: List[str] = []
         lines.append(f"Life Chronicle – Epoch {s.epoch} | XP {s.xp}")
+        lines.append(f"Life Phase: {s.life_phase}  (History: {'>'.join(s.life_phase_history)})")
+        lines.append(f"Stats: discipline={s.stat_discipline} insight={s.stat_insight} resilience={s.stat_resilience}")
         lines.append(f"Top Preferences: {', '.join(s.top_preferences(5)) or '-'}")
         lines.append(f"Top Habits: {', '.join(s.top_habits(5)) or '-'}")
         lines.append(f"Artifacts: {len(s.artifacts)}")
+        if s.achievements_unlocked:
+            lines.append("Achievements: " + ", ".join(s.achievements_unlocked))
+        lines.append("Topics: " + ", ".join(s.topics))
         lines.append("-- Milestones --")
         for art in s.artifacts:
             lines.append(f"Epoch {art.epoch}: {art.title} :: {art.notes}")
         lines.append("-- Recent Episodes --")
         for ep in s.episodes[-30:]:
-            lines.append(f"[{ep.actor}] {ep.text}")
+            lines.append(f"[{ep.actor}|{ep.topic_id}] {ep.text}")
         return "\n".join(lines)
 
     def reject_action(self) -> None:
@@ -267,3 +320,57 @@ class LifeSimEngine:
             s.om_suggestion_len = 4
         adjustments["om_suggestion_len"] = s.om_suggestion_len
         return adjustments
+
+    # autonomous background tick (simplified)
+    def autonomous_tick(self) -> Dict[str, Any]:  # pragma: no cover basic heuristic
+        s = self.state
+        result: Dict[str, Any] = {"generated": []}
+        # produce a spontaneous thought if enough time
+        self._maybe_tick_thoughts()
+        # minor world tick
+        s.world.tick += 1
+        # scan achievements
+        self._scan_achievements()
+        # if night & not yet dreamed -> dream
+        if s.time_block == "NIGHT" and not s.dream_night_flag:
+            dream = self._generate_dream()
+            if dream:
+                result["generated"].append("dream")
+        # biased event chance
+        biased = self.maybe_trigger_biased_event()
+        if biased:
+            result["biased_event"] = biased.get("applied")
+        return result
+
+    def _scan_achievements(self) -> None:
+        s = self.state
+        # simple conditions
+        conditions = {
+            "streak_5": lambda: s.success_streak >= 5,
+            "xp_50": lambda: s.xp >= 50,
+            "clarity_70": lambda: s.needs.clarity >= 70,
+            "artifact_3": lambda: len(s.artifacts) >= 3,
+        }
+        for key, fn in conditions.items():
+            if key not in s.achievements_unlocked and fn():
+                s.achievements_unlocked.append(key)
+                s.add_episode(Episode(actor="system", text=f"achievement_unlocked {key}", tags=["achievement"], topic_id="main"))
+        # derive stats roughly
+        s.stat_discipline = max(s.stat_discipline, s.success_streak)
+        s.stat_insight = max(s.stat_insight, len([t for t in s.thoughts if 'Fokus' in t.text]))
+        s.stat_resilience = max(s.stat_resilience, s.rejected_actions)
+
+    def _generate_dream(self) -> Optional[str]:
+        s = self.state
+        # summarize last few episodes into a dream thought
+        recent = [ep.text for ep in reversed(s.episodes) if ep.actor == "user"][:5]
+        if not recent:
+            return None
+        dream_txt = "Traum: " + " | ".join(r[:30] for r in recent)[-240:]
+        s.maybe_add_thought(dream_txt, refs={"type": ["dream"]})
+        s.dream_night_flag = True
+        # small chance to create insight artifact
+        if random.random() < 0.25:
+            art = s.add_artifact(title="Insight Fragment", effect="insight", notes="dream synthesis")
+            s.add_episode(Episode(actor="system", text=f"dream_artifact {art.title}", tags=["dream"], topic_id="main"))
+        return dream_txt

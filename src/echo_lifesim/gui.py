@@ -121,6 +121,17 @@ with col_state:
         st.progress(int(v), text=f"{k}: {int(v)}")
     st.markdown("### Overmind")
     st.write({"thought_interval_ms": engine.state.thought_interval_ms, "streak": engine.state.success_streak})
+    st.markdown("### Phase & Stats")
+    st.write({
+        "life_phase": engine.state.life_phase,
+        "discipline": engine.state.stat_discipline,
+        "insight": engine.state.stat_insight,
+        "resilience": engine.state.stat_resilience,
+    })
+    if engine.state.achievements_unlocked:
+        st.caption("Achievements: " + ", ".join(engine.state.achievements_unlocked))
+    if engine.state.skill_mastery:
+        st.caption("Mastery: " + ", ".join(f"{k}:{v}" for k,v in engine.state.skill_mastery.items()))
     st.markdown("### Buffs")
     if engine.state.buffs:
         st.write(", ".join(f"{b}({ttl})" for b, ttl in engine.state.buffs.items()))
@@ -132,12 +143,18 @@ with col_state:
     else:
         st.caption("Keine Debuffs aktiv")
     st.markdown("### Letzte Episoden")
-    recent = engine.state.episodes[-5:]
-    for ep in recent:
-        st.write(f"[{ep.actor}] {ep.text}")
+    topics = engine.state.topics
+    tab_objs = st.tabs(topics)
+    for t_idx, t in enumerate(topics):
+        with tab_objs[t_idx]:
+            filtered = [ep for ep in reversed(engine.state.episodes) if ep.topic_id == t][:10]
+            for ep in filtered:
+                st.write(f"[{ep.actor}] {ep.text}")
     st.markdown("### Thoughts")
     for th in engine.state.thoughts[-5:]:
         st.caption(f"🧠 {th.text}")
+    if st.button("Chronicle Export anzeigen"):
+        st.code(engine.build_chronicle()[:4000])
 
 st.markdown("---")
 st.caption("Preview GUI • Streamlit • Speichert automatisch nur bei Klick auf 'State speichern'")

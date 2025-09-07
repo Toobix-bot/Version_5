@@ -1,0 +1,5 @@
+{
+  "name": "default",
+  "need_drift": {"energy": 0, "clarity": 0, "connection": 0, "order": 0, "creativity": 0, "calm": 0},
+  "event_bias": {"insight": 1.0, "social": 1.0, "weather": 1.0}
+}

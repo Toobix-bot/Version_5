@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pydantic import BaseModel, Field
-from typing import List, Literal, Dict
+from typing import List, Literal, Dict, Any
 import time
 
 TimeBlock = Literal["MORNING", "MIDDAY", "EVENING", "NIGHT"]
@@ -14,12 +14,26 @@ class Episode(BaseModel):
     text: str
     tags: List[str] = Field(default_factory=list)
     importance: float = 0.5
+    topic_id: str = "main"
 
 class Thought(BaseModel):
     ts: float = Field(default_factory=lambda: time.time())
     text: str
     source: str = "ticker"  # future: overmind, system, reflection
     refs: Dict[str, List[int] | List[str]] = Field(default_factory=dict)
+
+class WorldEntity(BaseModel):
+    id: str
+    kind: str = "PLACE"  # PLACE | PERSON | GROUP
+    name: str
+    attrs: Dict[str, Any] = Field(default_factory=dict)
+
+class WorldState(BaseModel):
+    scenario: str = "default"
+    tick: int = 0
+    entities: List[WorldEntity] = Field(default_factory=list)
+    def add_entity(self, ent: WorldEntity) -> None:
+        self.entities.append(ent)
 
 class SkillTest(BaseModel):
     input: str
@@ -39,6 +53,12 @@ class Artifact(BaseModel):
     epoch: int
     title: str
     effect: str = "flavor"
+    notes: str = ""
+
+class Item(BaseModel):
+    name: str
+    effect_buffs: Dict[str, int] = Field(default_factory=dict)  # buff -> turns each morning
+    passive_need_delta: Dict[str, int] = Field(default_factory=dict)  # applied each MORNING
     notes: str = ""
 
 class NeedState(BaseModel):
@@ -114,12 +134,29 @@ class PersonaState(BaseModel):
     # skills & artifacts
     unlocked_skills: List[str] = Field(default_factory=list)
     artifacts: List[Artifact] = Field(default_factory=list)
+    topics: List[str] = Field(default_factory=lambda: ["main"])  # known topic ids
+    # world & meta
+    world: WorldState = Field(default_factory=WorldState)
+    # achievements & stats
+    achievements_unlocked: List[str] = Field(default_factory=list)
+    stat_discipline: int = 0
+    stat_insight: int = 0
+    stat_resilience: int = 0
+    dream_night_flag: bool = False  # to avoid multiple dream generations per night
+    # items & mastery & phases
+    items: List[Item] = Field(default_factory=list)
+    skill_uses: Dict[str, int] = Field(default_factory=dict)  # raw use counters
+    skill_mastery: Dict[str, int] = Field(default_factory=dict)  # level per skill
+    life_phase: str = "phase_1"  # phase_1 -> phase_4
+    life_phase_history: List[str] = Field(default_factory=lambda: ["phase_1"])
     # feature flags
     web_research_enabled: bool = False
     # history management
     max_episode_history: int = 400
 
     def add_episode(self, ep: Episode) -> None:
+        if ep.topic_id not in self.topics:
+            self.topics.append(ep.topic_id)
         self.episodes.append(ep)
 
     def add_note(self, text: str) -> None:
@@ -141,6 +178,8 @@ class PersonaState(BaseModel):
         self.time_block = order[(idx + 1) % len(order)]
         if self.time_block == "MORNING":
             self.needs.decay_towards_mid()
+            self.dream_night_flag = False  # reset dream flag at new day
+            self._apply_item_passives()
         self._tick_effects()
 
     def _tick_effects(self) -> None:
@@ -200,7 +239,31 @@ class PersonaState(BaseModel):
         # compress episodes if exceeding cap (keep newest N)
         if len(self.episodes) > self.max_episode_history:
             self.episodes = self.episodes[-self.max_episode_history:]
+        self._maybe_advance_life_phase()
         return art
+
+    def _apply_item_passives(self) -> None:
+        for it in self.items:
+            if it.passive_need_delta:
+                self.needs.apply_delta(**it.passive_need_delta)
+            for buff, turns in it.effect_buffs.items():
+                # refresh buff with max remaining if already present
+                cur = self.buffs.get(buff, 0)
+                self.buffs[buff] = max(cur, turns)
+
+    def _maybe_advance_life_phase(self) -> None:
+        # simple thresholds by epoch or xp
+        mapping = [
+            ("phase_2", lambda: self.epoch >= 2 or self.xp >= 40),
+            ("phase_3", lambda: self.epoch >= 4 or self.xp >= 120),
+            ("phase_4", lambda: self.epoch >= 6 or self.xp >= 250),
+        ]
+        for phase, cond in mapping:
+            if phase not in self.life_phase_history and cond():
+                self.life_phase = phase
+                self.life_phase_history.append(phase)
+                self.add_note(f"LifePhase erreicht: {phase}")
+                break
 
 # rebuild to resolve forward refs
 PersonaState.model_rebuild()
