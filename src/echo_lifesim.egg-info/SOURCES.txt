@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/echo_lifesim/__init__.py
+src/echo_lifesim/cli.py
+src/echo_lifesim/engine.py
+src/echo_lifesim/llm_client.py
+src/echo_lifesim/memory.py
+src/echo_lifesim/models.py
+src/echo_lifesim/persistence.py
+src/echo_lifesim.egg-info/PKG-INFO
+src/echo_lifesim.egg-info/SOURCES.txt
+src/echo_lifesim.egg-info/dependency_links.txt
+src/echo_lifesim.egg-info/entry_points.txt
+src/echo_lifesim.egg-info/requires.txt
+src/echo_lifesim.egg-info/top_level.txt
+tests/test_engine_basic.py
