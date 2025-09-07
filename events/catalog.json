@@ -1,0 +1,5 @@
+[
+  {"key": "regen", "need_effects": {"calm": 5, "creativity": 3}, "rarity": 0.6, "tags": ["weather","ambient"]},
+  {"key": "freund_absage", "need_effects": {"connection": -6, "calm": -4}, "rarity": 0.3, "tags": ["social","loss"]},
+  {"key": "idee_fund", "need_effects": {"creativity": 8, "clarity": 4}, "rarity": 0.2, "tags": ["insight"]}
+]

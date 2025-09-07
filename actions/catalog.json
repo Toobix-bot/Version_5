@@ -1,0 +1,10 @@
+[
+  {"label": "2-Min atemfokus", "duration": "2-Min", "need_effects": {"calm": 5, "clarity": 3}, "tags": ["calm","clarity","mindfulness"], "weight": 1.0},
+  {"label": "10-Min ordnungsecke", "duration": "10-Min", "need_effects": {"order": 7, "calm": 2}, "tags": ["order","calm"], "weight": 1.0},
+  {"label": "nachricht an freund", "duration": "2-Min", "need_effects": {"connection": 8}, "tags": ["connection","social"], "weight": 1.0},
+  {"label": "skizze 2 ideen", "duration": "5-Min", "need_effects": {"creativity": 6, "clarity": 2}, "tags": ["creativity"], "weight": 1.0},
+  {"label": "kurzer stretch", "duration": "2-Min", "need_effects": {"energy": 4, "creativity": 2}, "tags": ["energy","body"], "weight": 1.0},
+  {"label": "mini lernnotiz", "duration": "5-Min", "need_effects": {"clarity": 4}, "tags": ["learning","clarity"], "weight": 1.0},
+  {"label": "ordner sortieren", "duration": "10-Min", "need_effects": {"order": 6, "calm": 1}, "tags": ["order"], "weight": 1.0},
+  {"label": "tiefer fokus block", "duration": "15-Min", "need_effects": {"clarity": 6, "creativity": 4}, "tags": ["focus"], "weight": 1.0}
+]

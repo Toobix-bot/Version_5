@@ -3,14 +3,11 @@ from typing import Tuple, List, Dict, TypedDict, Optional
 import random
 import time
 from .models import PersonaState, Episode
+from .catalogs import load_actions, load_events
 from .llm_client import get_groq
 from .memory import MemoryIndex
 
-EVENT_EFFECTS: Dict[str, Dict[str, int]] = {
-    "regen": {"calm": +5, "creativity": +3},
-    "freund_absage": {"connection": -6, "calm": -4},
-    "idee_fund": {"creativity": +8, "clarity": +4},
-}
+EVENT_CACHE = load_events()
 
 BUFF_LIBRARY: Dict[str, Dict[str, int]] = {
     "klarer_kopf": {"clarity": +2},
@@ -45,7 +42,10 @@ class LifeSimEngine:
     def apply_event(self, event_key: Optional[str]) -> Dict[str, int]:
         if not event_key:
             return {}
-        effects = EVENT_EFFECTS.get(event_key, {})
+        spec = EVENT_CACHE.get(event_key)
+        if not spec:
+            return {}
+        effects = spec.get("need_effects", {})
         if effects:
             self.state.needs.apply_delta(**effects)
         return effects
@@ -53,23 +53,26 @@ class LifeSimEngine:
     def suggest_actions(self) -> List[Tuple[str, str]]:
         s = self.state
         candidates: List[Tuple[str, str]] = []
+        # dynamic action catalog weighting
+        catalog = load_actions()
         n = s.needs
-        # base candidate generation
-        if n.energy < 45:
-            candidates.append(("2-Min atemfokus", "2-Min"))
-        if n.order < 45:
-            candidates.append(("10-Min ordnungsecke", "10-Min"))
-        if n.connection < 45:
-            candidates.append(("nachricht an freund", "2-Min"))
-        if n.creativity < 45:
-            candidates.append(("skizze 2 ideen", "5-Min"))
-        if not candidates:
-            candidates = [
-                ("kurzer stretch", "2-Min"),
-                ("mini lernnotiz", "5-Min"),
-                ("ordner sortieren", "10-Min"),
-                ("tiefer fokus block", "15-Min"),
-            ]
+        scored: List[Tuple[float, Tuple[str, str], Dict[str, int]]] = []
+        for a in catalog:
+            label = a.get("label", "")
+            duration = a.get("duration", "?")
+            effects: Dict[str, int] = a.get("need_effects", {})
+            # score: sum of positive deltas for currently low needs + base weight
+            weight = float(a.get("weight", 1.0))
+            score = weight
+            for need, delta in effects.items():
+                val = getattr(n, need, 50)
+                if delta > 0 and val < 55:
+                    score += (55 - val) * (delta / 10)
+            scored.append((score, (label, duration), effects))
+        if not scored:  # fallback safety
+            scored = [(1.0, ("kurzer stretch", "2-Min"), {})]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        candidates = [tpl for _, tpl, _ in scored[:12]]  # keep top pool before variety rules
         # intensity filter / reorder
         if s.om_intensity == 1:
             candidates = [c for c in candidates if not c[1].startswith("15")]
@@ -104,7 +107,6 @@ class LifeSimEngine:
         trimmed = candidates[:limit]
         # skill-based injection: web research
         if s.web_research_enabled and s.has_skill("web_research_3_2_1"):
-            # put a lightweight research action if not already there
             label = "3-2-1 web research mini"
             if all(label not in c[0] for c in trimmed):
                 trimmed.append((label, "5-Min"))
@@ -165,19 +167,40 @@ class LifeSimEngine:
         # artifact auto awarding every 25 xp
         if self.state.xp % 25 == 0:
             self.state.add_artifact(title=f"Milestone XP {self.state.xp}", effect="milestone", notes="Auto-award")
-        cl = choice_label.lower()
-        if "atem" in cl:
-            self.state.needs.apply_delta(calm=+5, clarity=+3)
-            self.state.buffs.setdefault("klarer_kopf", 3)
-        elif "ordnung" in cl:
-            self.state.needs.apply_delta(order=+7, calm=+2)
-            self.state.buffs.setdefault("ordnung_plus", 3)
-        elif "freund" in cl:
-            self.state.needs.apply_delta(connection=+8)
-        elif "stretch" in cl:
-            self.state.needs.apply_delta(energy=+4, creativity=+2)
+        # derive effects from catalog for consistency
+        catalog_map = {a.get("label"): a for a in load_actions()}
+        spec = catalog_map.get(choice_label)
+        applied: Dict[str, int] = {}
+        if spec:
+            eff = spec.get("need_effects", {})
+            if eff:
+                self.state.needs.apply_delta(**eff)
+                applied = eff
+                # simple buff inference
+                if "clarity" in eff and eff["clarity"] >= 3:
+                    self.state.buffs.setdefault("klarer_kopf", 3)
+                if "order" in eff and eff["order"] >= 6:
+                    self.state.buffs.setdefault("ordnung_plus", 3)
         self.state.advance_time()
         self._apply_status_effects()
+        if applied:
+            self.state.add_episode(Episode(actor="system", text=f"action_effect {choice_label} {applied}", tags=["action_effect"]))
+
+    # life chronicle (basic)
+    def build_chronicle(self) -> str:
+        s = self.state
+        lines: List[str] = []
+        lines.append(f"Life Chronicle – Epoch {s.epoch} | XP {s.xp}")
+        lines.append(f"Top Preferences: {', '.join(s.top_preferences(5)) or '-'}")
+        lines.append(f"Top Habits: {', '.join(s.top_habits(5)) or '-'}")
+        lines.append(f"Artifacts: {len(s.artifacts)}")
+        lines.append("-- Milestones --")
+        for art in s.artifacts:
+            lines.append(f"Epoch {art.epoch}: {art.title} :: {art.notes}")
+        lines.append("-- Recent Episodes --")
+        for ep in s.episodes[-30:]:
+            lines.append(f"[{ep.actor}] {ep.text}")
+        return "\n".join(lines)
 
     def reject_action(self) -> None:
         self.state.rejected_actions += 1
