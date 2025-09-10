@@ -10,3 +10,6 @@ pytest
 ruff
 mypy
 pytest-cov
+
+[gui]
+streamlit>=1.36.0

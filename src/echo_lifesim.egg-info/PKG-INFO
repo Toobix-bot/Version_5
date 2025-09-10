@@ -16,10 +16,14 @@ Requires-Dist: pytest; extra == "dev"
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: mypy; extra == "dev"
 Requires-Dist: pytest-cov; extra == "dev"
+Provides-Extra: gui
+Requires-Dist: streamlit>=1.36.0; extra == "gui"
 
 # ECHO-LifeSim MVP
 
 Minimaler Prototyp basierend auf deinem Konzept (Mirror-Mode, Episoden, Bedürfnisse, A/B Aktionen, Reflexion alle 5 Züge).
+
+> NEU: Siehe `README_TUTORIAL.md` für einen geführten Einstieg (Erste Schritte, Beispiele, GUI, Tipps).
 
 ## Installation
 

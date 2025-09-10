@@ -233,12 +233,23 @@ class LifeSimEngine:
         self._apply_status_effects()
         if applied:
             self.state.add_episode(Episode(actor="system", text=f"action_effect {choice_label} {applied}", tags=["action_effect"], topic_id="main"))
+        # objective tracking: mark need_raise done if threshold reached
+        if self.state.daily_objectives:
+            for obj in self.state.daily_objectives:
+                if not obj.get("done") and obj.get("type") == "need_raise":
+                    need = str(obj.get("need"))
+                    target = int(obj.get("target", 0))
+                    val = getattr(self.state.needs, need, 0)  # type: ignore[arg-type]
+                    if isinstance(val, (int, float)) and val >= target:
+                        obj["done"] = True
+                        self.state.add_episode(Episode(actor="system", text=f"objective_done {obj['id']}", tags=["objective"], topic_id="main"))
 
     # life chronicle (basic)
     def build_chronicle(self) -> str:
         s = self.state
         lines: List[str] = []
         lines.append(f"Life Chronicle – Epoch {s.epoch} | XP {s.xp}")
+        lines.append(f"Day: {s.day_counter}")
         lines.append(f"Life Phase: {s.life_phase}  (History: {'>'.join(s.life_phase_history)})")
         lines.append(f"Stats: discipline={s.stat_discipline} insight={s.stat_insight} resilience={s.stat_resilience}")
         lines.append(f"Top Preferences: {', '.join(s.top_preferences(5)) or '-'}")
@@ -247,6 +258,9 @@ class LifeSimEngine:
         if s.achievements_unlocked:
             lines.append("Achievements: " + ", ".join(s.achievements_unlocked))
         lines.append("Topics: " + ", ".join(s.topics))
+        if s.daily_objectives:
+            active = [f"{o['id']}:{'done' if o.get('done') else o.get('target')}" for o in s.daily_objectives]
+            lines.append("Objectives: " + ", ".join(active))
         lines.append("-- Milestones --")
         for art in s.artifacts:
             lines.append(f"Epoch {art.epoch}: {art.title} :: {art.notes}")

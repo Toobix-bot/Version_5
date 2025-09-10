@@ -153,6 +153,10 @@ class PersonaState(BaseModel):
     web_research_enabled: bool = False
     # history management
     max_episode_history: int = 400
+    # progression / objectives
+    day_counter: int = 0
+    daily_objectives: List[Dict[str, Any]] = Field(default_factory=list)
+    last_objective_day: int = -1
 
     def add_episode(self, ep: Episode) -> None:
         if ep.topic_id not in self.topics:
@@ -177,10 +181,34 @@ class PersonaState(BaseModel):
         idx = order.index(self.time_block)
         self.time_block = order[(idx + 1) % len(order)]
         if self.time_block == "MORNING":
+            # new day
+            self.day_counter += 1
             self.needs.decay_towards_mid()
             self.dream_night_flag = False  # reset dream flag at new day
             self._apply_item_passives()
+            self._maybe_generate_objectives()
         self._tick_effects()
+
+    def _maybe_generate_objectives(self) -> None:
+        if self.last_objective_day == self.day_counter:
+            return
+        # simple: select up to 2 lowest needs and create raise objectives
+        need_vals = {k: getattr(self.needs, k) for k in NEED_KEYS}
+        lows = sorted(need_vals.items(), key=lambda x: x[1])[:2]
+        self.daily_objectives = []
+        for name, val in lows:
+            target = min(100, val + 8)
+            self.daily_objectives.append({
+                "id": f"need_{name}",
+                "type": "need_raise",
+                "need": name,
+                "baseline": val,
+                "target": target,
+                "done": False,
+            })
+        self.last_objective_day = self.day_counter
+        if self.daily_objectives:
+            self.add_episode(Episode(actor="system", text=f"objectives_new {[o['id'] for o in self.daily_objectives]}", tags=["objective"], topic_id="main"))
 
     def _tick_effects(self) -> None:
         def dec(d: Dict[str, int]) -> None:
